@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Precipitation in Dartmouth</title>
+    <script src="d3.min.js"></script>
+    <style>
+        body{
+            font-family: sans-serif;
+        }
+        .container{
+            padding: 30px;
+        }
+        .xAxis{
+            font-family: sans-serif;
+            font-size: 18px;
+        }
+        .xAxis .tick line{
+            stroke-width: .5;
+            stroke: #606060;
+        }
+
+        .xAxis path{
+            stroke: white;
+        }
+
+        .yAxis{
+            font-family: sans-serif;
+            font-size: 16px;
+        }
+        .yAxis .tick line{
+            stroke-width: .5;
+            stroke: #606060;
+        }
+        .yAxis path{
+            stroke: white;
+        }
+
+        .legends{
+            transition: opacity 0.5s ease;
+            cursor: pointer;
+        }
+
+        .legends:hover{
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+<h1>
+    Precipitation in Dartmouth
+</h1>
+<div class="container">
+    <svg id="main" width="50vw" height="40vw" viewBox="0 0 1000 800">
+    </svg>
+</div>
+<script>
+    const margin = {top: 50, bottom: 100, left: 50, right: 50}
+    const width=1000,height=800;
+
+    const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
+    const colors = ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a','#ffff99','#b15928']
+
+    // Load the data
+    d3.csv("Dartmouth.csv").then(areaChart)
+
+    function areaChart(data){
+        const Years = data.map(d=>d.YEAR);
+
+        let activeMonths = [...months]; //keep track of active months
+        
+        // select the svg element and append a group
+        const group = d3.select('svg#main').append("g")
+
+        //Initial chart
+        updateChart(group, Years, months, data);
+
+        // add legend
+        const legends = group.append("g")
+            .attr("transform",`translate(${width/3},${margin.top/2})`)
+            .selectAll(".legends")
+            .data(months)
+            .enter().append("g")
+            .attr("transform",(_,i)=>`translate(${i*55},${0})`)
+            .attr("class","legends")            
+            .on("click", function(_, i){
+                if(activeMonths.includes(i)){
+                    activeMonths = activeMonths.filter(month => month !== i);
+                }else{
+                    activeMonths.splice(months.indexOf(i), 0, i);  
+                }
+         
+                updateChart(group, Years, activeMonths, data);
+
+               // Update the opacity of the legend
+                d3.select(this)
+                .transition()
+                .duration(500)
+                .style("opacity", activeMonths.includes(i) ? 1 : 0.3); 
+            });
+
+            legends.append("rect")
+            .attr("width","45px")
+            .attr("height","25px")
+            .attr("x","15")
+            .attr("y","-10")
+            .attr("rx","7px")
+            .attr("fill",(_,i)=>colors[i]);
+
+            // See use of text https://developer.mozilla.org/en-US/docs/Web/SVG/Tutorial/Texts
+            legends.append("text")
+                .text(d=>d)
+                .attr("dx", 15 + 45 / 2)
+                .attr("dy", -10 + 25 / 2 + 5) 
+                .attr("fill","black")
+                .attr("text-anchor","middle");
+        }
+
+        function updateChart(group, Years, activeMonths, data) {
+        // Clear the existing chart contents
+        group.selectAll(".areaChart, .xAxis, .yAxis").remove();
+
+        let stack = d3.stack()
+             .keys(activeMonths).offset(d3.stackOffsetWiggle);
+
+        let stackedSeries = stack(data);
+
+
+        //find the max Y value
+        let yMax = d3.max(stackedSeries.map(d=>d3.max(d.map(dd=>d3.max(dd)))))
+
+        // find the min Y value
+        let yMin = d3.min(stackedSeries.map(d=>d3.min(d.map(dd=>d3.min(dd)))))
+
+
+        // Scale functionS
+        let yScale = d3.scaleLinear()
+            .domain([yMin, yMax]) // data values are between [0 , sum of all y values]
+            .range([height-margin.bottom, margin.top]);
+
+        let xScale =d3.scalePoint()
+            .domain(Years)
+            .range([margin.left,width-margin.right])
+
+        // Area function
+        let area = d3.area()
+        .x((_, i)=> xScale(Years[i]))
+        .y0(d=>yScale(d[0]))
+        .y1(d=>yScale(d[1]))
+        .curve(d3.curveBasis); // in case you want to have smooth lines!
+
+        
+        // add the area paths to the group
+        group.append("g").attr("class","areaChart").selectAll('.paths')
+            .data(stackedSeries)        // bind data to the group
+            .enter()
+            .append('path')             // append "path" element to the group
+            .attr('fill', (d, i)=>colors[months.indexOf(activeMonths[i])])
+            .attr("opacity",0)
+            .transition()           // add animation-transition
+            .delay((_,i)=>i*100)
+            .duration(1000)         // add duration
+            .attr("opacity",.9)      // change opacity from 0 to 1 during 2 seconds
+            .attr('d', area);       // in short it can be written as just the generator name
+
+            
+        let xAxisGenerator = d3.axisBottom(xScale)
+            .tickValues(xScale.domain().filter((d, i) => i%5===0))
+            .tickSize(-1*(height-margin.top-margin.bottom))
+
+        let yAxisGenerator = d3.axisLeft(yScale).tickSize(-1*(width-margin.left-margin.right))
+
+        let xAxisGroup= group.append("g")
+            .attr("class","xAxis")
+            .attr("transform",`translate(${0},${height-margin.bottom})`)
+        xAxisGroup.call(xAxisGenerator)
+
+        let yAxisGroup= group.append("g")
+            .attr("class","yAxis")
+            .attr("transform",`translate(${margin.left},${0})`)
+        yAxisGroup.call(yAxisGenerator)
+    }
+        
+</script>
+
+</body>
+</html>
+
+
+
+
+
+
+
+
